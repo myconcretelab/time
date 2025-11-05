@@ -592,8 +592,11 @@ function setThemeTotal(date, themeId, minutes){
 
 function drawRing(canvas, minutes, themeColor){
   const ctx = canvas.getContext('2d'); const w = canvas.width, h = canvas.height;
-  const cx=w/2, cy=h/2, r=Math.min(cx,cy)-4; // padding
   const thickness = state.ringThickness || 16;
+  // Ensure the arc + shadow never gets clipped by the canvas edge
+  const cx = w/2, cy = h/2;
+  const pad = (thickness/2) + 6; // half stroke + shadow blur
+  const r = Math.max(0, Math.min(cx, cy) - pad);
   const textColor = bestTextColor(themeColor);
   const stroke = mixColor(themeColor, '#000000', 0.35); // darker than pad bg
   const track = mixColor(themeColor, '#ffffff', 0.70); // lighter subtle track

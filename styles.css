@@ -71,13 +71,13 @@ main{max-width:1000px; margin:0 auto; padding:1rem}
 .tray-items{display:flex; gap:.5rem}
 .pebble{
   display:inline-flex; align-items:center; justify-content:center;
-  min-width:46px; height:40px; padding:0 .6rem; border-radius:999px;
-  border:1px solid var(--ring); font-weight:600;
+  min-width:60px; height:52px; padding:0 .8rem; border-radius:999px;
+  border:1px solid var(--ring); font-weight:600; font-size:1.05rem;
   user-select:none;
 }
 .pebble.source{cursor:grab}
 .pebble.source:active{cursor:grabbing}
-.pebble.small{height:30px; min-width:36px; font-size:.9rem}
+.pebble.small{height:36px; min-width:44px; font-size:1rem}
 
 .tray-items .pebble{ background:var(--pebble-tray-bg); color:var(--pebble-tray-fg); }
 .bucket-body .pebble{ background:var(--pebble-chip-bg); color:var(--pebble-chip-fg); }
@@ -99,7 +99,7 @@ main{max-width:1000px; margin:0 auto; padding:1rem}
 
 .note-area{margin:1rem 0; display:grid; gap:.5rem}
 .emotion-picker{display:flex; gap:.4rem; flex-wrap:wrap}
-.emotion{border:1px solid var(--soft); background:var(--paper); border-radius:.6rem; padding:.3rem .5rem; cursor:pointer}
+.emotion{border:1px solid var(--soft); background:var(--paper); border-radius:.6rem; padding:.35rem .6rem; cursor:pointer; font-size:1.8rem; line-height:1}
 .emotion.selected{background:var(--ink); color:var(--paper); border-color:var(--ink)}
 textarea#note{border:1px solid var(--soft); background:var(--paper); border-radius:.6rem; padding:.6rem; resize:vertical}
 
