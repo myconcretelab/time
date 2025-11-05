@@ -1,0 +1,5 @@
+# Ignorer le fichier de données local du serveur
+data.json
+
+# Fichiers système courants (optionnel)
+.DS_Store
