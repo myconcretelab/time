@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Temps vécu — Équilibre doux</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="logo">🫧</span>
+        <h1>Temps vécu</h1>
+      </div>
+      <nav class="tabs" role="tablist">
+        <div class="tabs-left">
+          <button class="tab active" data-tab="today" aria-selected="true">Aujourd'hui</button>
+          <button class="tab" data-tab="stats" aria-selected="false">Statistiques</button>
+          <button class="tab" data-tab="settings" aria-selected="false">Thèmes</button>
+        </div>
+        <div class="user-select">
+          <label for="user">Utilisateur</label>
+          <select id="user">
+            <option>Seb</option>
+            <option>Soaz</option>
+          </select>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <!-- Today View -->
+      <section id="view-today" class="view active" aria-labelledby="tab-today">
+        <div class="day-bar">
+          <button id="prev-day" class="icon-btn" title="Jour précédent">◀</button>
+          <label for="date">Jour</label>
+          <input type="date" id="date" />
+          <button id="next-day" class="icon-btn" title="Jour suivant">▶</button>
+          <div class="spacer"></div>
+          <div id="day-total" class="day-total" title="Total alloué / 24h">0h / 24h</div>
+        </div>
+
+        <div id="week-strip" class="week-strip" aria-label="Semaine"></div>
+
+        <div class="pebble-tray" aria-label="Pépites de temps">
+          <div class="tray-title">Fais glisser des pépites</div>
+          <div id="tray-items" class="tray-items"></div>
+        </div>
+
+        <div id="buckets" class="buckets" aria-live="polite"></div>
+
+        <div class="note-area">
+          <div class="emotion-picker" id="emotion-picker" aria-label="Émotion du jour">
+            <button class="emotion" data-emotion="😊">😊</button>
+            <button class="emotion" data-emotion="😌">😌</button>
+            <button class="emotion" data-emotion="🤗">🤗</button>
+            <button class="emotion" data-emotion="😴">😴</button>
+            <button class="emotion" data-emotion="🌧️">🌧️</button>
+            <button class="emotion" data-emotion="🌞">🌞</button>
+          </div>
+          <textarea id="note" rows="3" placeholder="Une petite note, une sensation, un souvenir… (facultatif)"></textarea>
+        </div>
+      </section>
+
+      <!-- Stats View -->
+      <section id="view-stats" class="view" aria-labelledby="tab-stats">
+        <div class="filters">
+          <label for="range">Période</label>
+          <select id="range">
+            <option value="7">7 jours</option>
+            <option value="30" selected>30 jours</option>
+            <option value="this-month">Ce mois</option>
+            <option value="all">Tout</option>
+          </select>
+        </div>
+        <div class="charts">
+          <canvas id="pie" width="360" height="360" aria-label="Répartition du temps" role="img"></canvas>
+          <div id="stats-legend" class="legend"></div>
+        </div>
+      </section>
+
+      <!-- Settings View -->
+      <section id="view-settings" class="view" aria-labelledby="tab-settings">
+        <div class="settings-actions">
+          <button id="add-theme" class="ghost">+ Ajouter un thème</button>
+        </div>
+        <ul id="themes-list" class="themes-list"></ul>
+
+        <h3>Apparence</h3>
+        <div class="appearance">
+          <label for="pebble-color-tray">Galets (plateau)</label>
+          <input type="color" id="pebble-color-tray" />
+          <span class="pebble preview" id="preview-tray">1h</span>
+          <label for="pebble-color-chip" style="margin-left:1rem">Galets (dans thèmes)</label>
+          <input type="color" id="pebble-color-chip" />
+          <span class="pebble preview" id="preview-chip">1h</span>
+          <label for="ring-thickness" style="margin-left:1rem">Épaisseur du cercle</label>
+          <input type="range" id="ring-thickness" min="8" max="28" step="1" />
+          <span id="ring-thickness-val"></span>
+        </div>
+
+        <h3>Tailles des pépites</h3>
+        <div class="sizes-actions">
+          <button id="add-size" class="ghost">+ Ajouter une taille</button>
+        </div>
+        <ul id="sizes-list" class="sizes-list"></ul>
+
+        <h3>Données</h3>
+        <div class="data-actions">
+          <button id="export-json">Exporter JSON</button>
+          <button id="import-json">Importer JSON</button>
+          <input type="file" id="import-file" accept="application/json" style="display:none" />
+          <button id="save-to-file" class="ghost" title="Expérimental (navigateur compatible)">Enregistrer sur un fichier…</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer"></footer>
+
+    <script src="app.js"></script>
+  </body>
+  </html>
