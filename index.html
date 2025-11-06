@@ -5,28 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Temps vécu — Équilibre doux</title>
     <link rel="stylesheet" href="styles.css" />
+    <script src="https://unpkg.com/nexusui@2.1.3/dist/NexusUI.js"></script>
   </head>
   <body>
-    <header class="app-header">
-      <div class="brand">
-        <span class="logo">🫧</span>
-        <h1>Temps vécu</h1>
-      </div>
-      <nav class="tabs" role="tablist">
-        <div class="tabs-left">
-          <button class="tab active" data-tab="today" aria-selected="true">Aujourd'hui</button>
-          <button class="tab" data-tab="stats" aria-selected="false">Statistiques</button>
-          <button class="tab" data-tab="settings" aria-selected="false">Thèmes</button>
-        </div>
-        <div class="user-select">
-          <label for="user">Utilisateur</label>
-          <select id="user">
-            <option>Seb</option>
-            <option>Soaz</option>
-          </select>
-        </div>
-      </nav>
-    </header>
+    <header class="app-header"></header>
 
     <main>
       <!-- Today View -->
@@ -37,14 +19,11 @@
           <input type="date" id="date" />
           <button id="next-day" class="icon-btn" title="Jour suivant">▶</button>
           <div class="spacer"></div>
-          <div id="day-total" class="day-total" title="Total alloué / 24h">0h / 24h</div>
         </div>
 
         <div id="week-strip" class="week-strip" aria-label="Semaine"></div>
 
-        <div class="pebble-tray" aria-label="Pépites de temps">
-          <div id="tray-items" class="tray-items"></div>
-        </div>
+        
 
         <div id="buckets" class="buckets" aria-live="polite"></div>
 
@@ -87,22 +66,14 @@
 
         <h3>Apparence</h3>
         <div class="appearance">
-          <label for="pebble-color-tray">Galets (plateau)</label>
-          <input type="color" id="pebble-color-tray" />
-          <span class="pebble preview" id="preview-tray">1h</span>
-          <label for="pebble-color-chip" style="margin-left:1rem">Galets (dans thèmes)</label>
-          <input type="color" id="pebble-color-chip" />
-          <span class="pebble preview" id="preview-chip">1h</span>
-          <label for="ring-thickness" style="margin-left:1rem">Épaisseur du cercle</label>
+          <label for="ring-thickness">Épaisseur du cercle</label>
           <input type="range" id="ring-thickness" min="8" max="28" step="1" />
           <span id="ring-thickness-val"></span>
+          <span style="width:1rem"></span>
+          <label for="handle-diameter">Diamètre de la poignée</label>
+          <input type="range" id="handle-diameter" min="8" max="36" step="1" />
+          <span id="handle-diameter-val"></span>
         </div>
-
-        <h3>Tailles des pépites</h3>
-        <div class="sizes-actions">
-          <button id="add-size" class="ghost">+ Ajouter une taille</button>
-        </div>
-        <ul id="sizes-list" class="sizes-list"></ul>
 
         <h3>Données</h3>
         <div class="data-actions">
@@ -117,5 +88,36 @@
     <footer class="app-footer"></footer>
 
     <script src="app.js"></script>
+    
+    <!-- Bottom navigation -->
+    <nav class="bottom-nav" role="tablist" aria-label="Navigation">
+      <div class="bottom-tabs" role="group" aria-label="Onglets">
+        <button class="tab active" data-tab="today" aria-selected="true" aria-current="page" aria-controls="view-today" aria-label="Aujourd'hui" title="Aujourd'hui" data-tooltip="Aujourd'hui">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+            <path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1Zm12 7H5v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9ZM6 7h12V6H6v1Z"/>
+          </svg>
+          <span class="sr-only">Aujourd'hui</span>
+        </button>
+        <button class="tab" data-tab="stats" aria-selected="false" aria-controls="view-stats" aria-label="Statistiques" title="Statistiques" data-tooltip="Stats">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+            <path d="M4 20a1 1 0 0 1-1-1V5a1 1 0 1 1 2 0v14a1 1 0 0 1-1 1Zm5 0a1 1 0 0 1-1-1V9a1 1 0 1 1 2 0v10a1 1 0 0 1-1 1Zm5 0a1 1 0 0 1-1-1V6a1 1 0 1 1 2 0v13a1 1 0 0 1-1 1Zm5 0a1 1 0 0 1-1-1V12a1 1 0 1 1 2 0v7a1 1 0 0 1-1 1Z"/>
+          </svg>
+          <span class="sr-only">Statistiques</span>
+        </button>
+        <button class="tab" data-tab="settings" aria-selected="false" aria-controls="view-settings" aria-label="Thèmes" title="Thèmes" data-tooltip="Thèmes">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+            <path d="M12 3a7 7 0 0 0-7 7c0 2.761 2.239 5 5 5h1a1 1 0 0 1 1 1v1c0 1.657 1.343 3 3 3a4 4 0 0 0 0-8h-1a1 1 0 0 1-1-1V9a6 6 0 0 0-6-6Zm-1 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm-3 3a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm6-3a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z"/>
+          </svg>
+          <span class="sr-only">Thèmes</span>
+        </button>
+      </div>
+      <div class="bottom-user">
+        <label class="sr-only" for="user">Utilisateur</label>
+        <select id="user" aria-label="Utilisateur">
+          <option>Seb</option>
+          <option>Soaz</option>
+        </select>
+      </div>
+    </nav>
   </body>
   </html>

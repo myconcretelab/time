@@ -22,7 +22,8 @@ const KEYS = {
   pebbleColor: (u)=>`time/${u}/pebbleColor`, // legacy single color
   pebbleColorTray: (u)=>`time/${u}/pebbleColorTray`,
   pebbleColorChip: (u)=>`time/${u}/pebbleColorChip`,
-  ringThickness: (u)=>`time/${u}/ringThickness`
+  ringThickness: (u)=>`time/${u}/ringThickness`,
+  handleDiameter: (u)=>`time/${u}/handleDiameter`
 };
 
 function loadThemes(user=state.user){
@@ -80,6 +81,15 @@ function saveRingThickness(px, user=state.user){
   scheduleSync();
 }
 
+function loadHandleDiameter(user=state.user){
+  const v = Number(localStorage.getItem(KEYS.handleDiameter(user)));
+  return Number.isFinite(v) && v>0 ? v : 16;
+}
+function saveHandleDiameter(px, user=state.user){
+  localStorage.setItem(KEYS.handleDiameter(user), String(px));
+  scheduleSync();
+}
+
 function getEntry(date){
   const entries = loadEntries();
   if (!entries[date]) entries[date] = { pebbles: [], note: '', emotion: '' };
@@ -99,23 +109,42 @@ let state = {
   sizes: [],
   pebbleTray: '#edeae4',
   pebbleChip: '#edeae4',
-  ringThickness: 16
+  ringThickness: 16,
+  handleDiameter: 16
 };
 
 // ---------- Tabs ----------
 function initTabs(){
-  $$('.tab').forEach(btn => btn.addEventListener('click', () => {
+  const activate = (btn)=>{
     const tab = btn.dataset.tab;
     state.tab = tab;
     $$('.tab').forEach(b=>{
-      b.classList.toggle('active', b===btn);
-      b.setAttribute('aria-selected', b===btn);
+      const isActive = b===btn;
+      b.classList.toggle('active', isActive);
+      b.setAttribute('aria-selected', String(isActive));
+      if (isActive) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
     });
     $$('.view').forEach(v=>v.classList.remove('active'));
-    $('#view-'+tab).classList.add('active');
+    const view = document.getElementById('view-'+tab);
+    if (view) view.classList.add('active');
     if (tab==='stats') renderStats();
     if (tab==='settings') renderSettings();
-  }));
+  };
+  $$('.tab').forEach(btn => btn.addEventListener('click', () => activate(btn)));
+  // Keyboard navigation for bottom nav
+  const tabs = $$('.bottom-nav .tab');
+  tabs.forEach((btn, idx)=>{
+    btn.addEventListener('keydown', (e)=>{
+      if (e.key==='ArrowRight' || e.key==='ArrowLeft'){
+        e.preventDefault();
+        const dir = e.key==='ArrowRight' ? 1 : -1;
+        const next = tabs[(idx + dir + tabs.length) % tabs.length];
+        next.focus();
+      } else if (e.key==='Enter' || e.key===' '){
+        e.preventDefault(); activate(btn);
+      }
+    });
+  });
 }
 
 // ---------- Today View ----------
@@ -136,95 +165,69 @@ function totalsByTheme(entry){
   return totals;
 }
 
-function renderToday(){
+function renderToday(skipWeekStrip=false){
   // buckets
   const container = $('#buckets');
   container.innerHTML = '';
   const entry = getEntry(state.date);
   const totals = totalsByTheme(entry);
-  // total of day
-  const dayTotal = entry.pebbles.reduce((a,b)=>a+b.minutes, 0);
-  const remain = 1440 - dayTotal;
-  const dt = $('#day-total');
-  dt.classList.remove('over','remain');
-  if (remain === 0) { dt.textContent = `${fmtMins(dayTotal)} / 24h`; }
-  else if (remain > 0) { dt.textContent = `${fmtMins(dayTotal)} · Reste ${fmtMins(remain)}`; dt.classList.add('remain'); }
-  else { dt.textContent = `${fmtMins(dayTotal)} · Dépassé de ${fmtMins(-remain)}`; dt.classList.add('over'); }
+  // total de jour retiré de l'en-tête (plus de #day-total)
 
-  renderWeekStrip();
-
-  renderTray();
+  if (!skipWeekStrip) renderWeekStrip();
 
   for (const t of state.themes){
     const bucket = document.createElement('div');
     bucket.className = 'bucket';
     bucket.dataset.themeId = t.id;
-    const textColor = bestTextColor(t.color);
-    bucket.style.background = t.color;
-    bucket.style.color = textColor;
-    bucket.style.borderColor = mixColor(t.color, '#000000', 0.15);
+    // header + dial container
     bucket.innerHTML = `
       <div class="bucket-header">
-        <span class="swatch" style="background:${t.color}; border-color:${mixColor(t.color, '#000000', 0.2)}"></span>
-        <div class="bucket-title">${t.icon} ${t.name}</div>
+        <div class="bucket-title" style="color:${t.color}">${escapeHtml(t.name)}</div>
         <div class="bucket-total">${totals[t.id] ? fmtMins(totals[t.id]) : ''}</div>
       </div>
-      <canvas class="ring" width="120" height="120" title="Glisse pour ajuster"></canvas>
-      <div class="bucket-body" aria-label="Zone de dépôt"></div>
+      <div class="dial" id="dial-${t.id}" title="Glisse pour ajuster"></div>
       
     `;
 
-    // Render pebbles inside bucket
-    const body = $('.bucket-body', bucket);
-    const pebbles = entry.pebbles.filter(p=>p.themeId===t.id);
-    for (const p of pebbles){
-      const chip = document.createElement('div');
-      chip.className = 'pebble small';
-      // flat chip uses chip appearance color / CSS vars
-      chip.style.background = getComputedStyle(document.documentElement).getPropertyValue('--pebble-chip-bg').trim() || state.pebbleChip;
-      const fg = getComputedStyle(document.documentElement).getPropertyValue('--pebble-chip-fg').trim() || bestTextColor(state.pebbleChip);
-      chip.style.color = fg;
-      // subtle border for contrast vs theme background
-      const L = relLuma(t.color);
-      chip.style.borderColor = L>0.5 ? mixColor(t.color, '#000000', 0.35) : mixColor(t.color, '#FFFFFF', 0.35);
-      chip.textContent = p.minutes===60 ? '1h' : `${p.minutes}m`;
-      chip.title = 'Cliquer pour retirer';
-      chip.addEventListener('click', ()=>{
-        // remove this pebble
-        const e = getEntry(state.date);
-        e.pebbles = e.pebbles.filter(x=>x.id!==p.id);
-        setEntry(state.date, e);
-        renderToday();
+    // Append before sizing to get width
+    container.appendChild(bucket);
+
+    // NexusUI Dial
+    const dialHost = document.getElementById(`dial-${t.id}`);
+    const size = Math.max(60, Math.floor(bucket.clientWidth));
+    let dial = null;
+    if (window.Nexus && window.Nexus.Dial){
+      dial = new window.Nexus.Dial(`#dial-${t.id}`, {
+        size: [size, size],
+        interaction: 'radial',
+        min: 0,
+        max: RING_MAX_MINUTES,
+        step: smallestUnit(),
+        value: Math.min(totals[t.id]||0, RING_MAX_MINUTES)
       });
-      body.appendChild(chip);
+      try{ dial.colorize && dial.colorize('accent', t.color); }catch{}
+      try{ dial.colorize && dial.colorize('fill', '#ffffff'); }catch{}
+      dial.on('change', (v)=>{
+        const minsTarget = Math.round(v/ smallestUnit())*smallestUnit();
+        setThemeTotal(state.date, t.id, minsTarget);
+        const e2 = getEntry(state.date);
+        const totals2 = totalsByTheme(e2);
+        $('.bucket-total', bucket).textContent = totals2[t.id] ? fmtMins(totals2[t.id]) : '';
+        // Update view without recomputing the week strip for smoother drag
+        renderToday(true);
+      });
+      // Refresh the week strip once the user ends interaction
+      ['mouseup','touchend','pointerup'].forEach(evt=>{
+        dialHost.addEventListener(evt, ()=>{ renderWeekStrip(); }, { passive:true });
+      });
+    } else {
+      dialHost.textContent = 'NexusUI non chargé';
+      dialHost.style.color = 'var(--muted)';
+      dialHost.style.textAlign = 'center';
+      dialHost.style.padding = '1rem 0';
     }
 
-    // Ring slider
-    const ring = $('.ring', bucket);
-    drawRing(ring, totals[t.id]||0, t.color);
-    initRing(ring, totals[t.id]||0, (minsTarget)=>{
-      setThemeTotal(state.date, t.id, minsTarget);
-      const e2 = getEntry(state.date);
-      const totals2 = totalsByTheme(e2);
-      $('.bucket-total', bucket).textContent = totals2[t.id] ? fmtMins(totals2[t.id]) : '';
-      drawRing(ring, totals2[t.id]||0, t.color);
-      renderToday();
-    });
-
-    // Drag & drop events
-    bucket.addEventListener('dragover', (ev)=>{ ev.preventDefault(); bucket.classList.add('drag-over'); });
-    bucket.addEventListener('dragleave', ()=> bucket.classList.remove('drag-over'));
-    bucket.addEventListener('drop', (ev)=>{
-      ev.preventDefault(); bucket.classList.remove('drag-over');
-      const mins = Number(ev.dataTransfer.getData('text/pebble-mins')) || 0;
-      if (!mins) return;
-      const e = getEntry(state.date);
-      e.pebbles.push({ id: uid(), themeId: t.id, minutes: mins });
-      setEntry(state.date, e);
-      renderToday();
-    });
-
-    container.appendChild(bucket);
+    // Drag & drop supprimé; le Dial contrôle le total
   }
 
   // emotion
@@ -242,14 +245,7 @@ function renderToday(){
   const noteEl = $('#note');
   noteEl.value = entry.note || '';
   noteEl.onchange = () => { const e = getEntry(state.date); e.note = noteEl.value; setEntry(state.date, e); };
-
-  // prepare draggable tray
-  $$('.pebble.source').forEach(src => {
-    src.addEventListener('dragstart', (ev)=>{
-      ev.dataTransfer.setData('text/pebble-mins', src.dataset.mins);
-      ev.dataTransfer.effectAllowed = 'copy';
-    });
-  });
+  // no pebble tray / drag
 }
 
 // ---------- Stats View ----------
@@ -326,7 +322,7 @@ function renderLegend(el, data){
     const row = document.createElement('div'); row.className = 'legend-item';
     row.innerHTML = `
       <span class="swatch" style="background:${d.theme.color}"></span>
-      <span class="name">${d.theme.icon} ${d.theme.name}</span>
+      <span class="name">${d.theme.name}</span>
       <span class="time">${fmtMins(d.minutes)} ${total?`· ${Math.round(100*d.minutes/total)}%`:''}</span>
     `;
     el.appendChild(row);
@@ -348,19 +344,16 @@ function renderSettings(){
         <button class="up" title="Monter">▲</button>
         <button class="down" title="Descendre">▼</button>
       </div>
-      <input class="icon" type="text" value="${t.icon}" size="2" aria-label="Icône" />
       <input class="name" type="text" value="${escapeHtml(t.name)}" aria-label="Nom" />
       <input class="color" type="color" value="${t.color}" aria-label="Couleur" />
       <button class="del" title="Supprimer">Supprimer</button>
     `;
     const sw = li.querySelector('.swatch');
-    const iconInput = li.querySelector('.icon');
     const nameInput = li.querySelector('.name');
     const colorInput = li.querySelector('.color');
     const delBtn = li.querySelector('.del');
     const upBtn = li.querySelector('.up');
     const downBtn = li.querySelector('.down');
-    iconInput.addEventListener('change', ()=>{ t.icon = iconInput.value; saveThemes(state.themes); renderToday(); renderStats(); });
     nameInput.addEventListener('change', ()=>{ t.name = nameInput.value; saveThemes(state.themes); renderToday(); renderStats(); });
     colorInput.addEventListener('input', ()=>{ t.color = colorInput.value; sw.style.background = t.color; saveThemes(state.themes); renderToday(); renderStats(); });
     delBtn.addEventListener('click', ()=>{
@@ -380,22 +373,13 @@ function renderSettings(){
   }
 
   // appearance
-  const trayInput = $('#pebble-color-tray');
-  const chipInput = $('#pebble-color-chip');
+  const trayInput = null; // pebble color controls removed
+  const chipInput = null;
   const thickInput = $('#ring-thickness');
   const thickVal = $('#ring-thickness-val');
-  if (trayInput){
-    trayInput.value = state.pebbleTray;
-    applyPebbleColors();
-    trayInput.oninput = (e)=>{ state.pebbleTray = e.target.value; applyPebbleColors(); };
-    trayInput.onchange = ()=>{ savePebbleColorTray(state.pebbleTray); renderToday(); renderStats(); };
-  }
-  if (chipInput){
-    chipInput.value = state.pebbleChip;
-    applyPebbleColors();
-    chipInput.oninput = (e)=>{ state.pebbleChip = e.target.value; applyPebbleColors(); };
-    chipInput.onchange = ()=>{ savePebbleColorChip(state.pebbleChip); renderToday(); renderStats(); };
-  }
+  const handleInput = document.getElementById('handle-diameter');
+  const handleVal = document.getElementById('handle-diameter-val');
+  // no pebble color inputs
   if (thickInput){
     thickInput.value = String(state.ringThickness);
     if (thickVal) thickVal.textContent = `${state.ringThickness}px`;
@@ -403,30 +387,14 @@ function renderSettings(){
     thickInput.onchange = ()=>{ saveRingThickness(state.ringThickness); renderToday(); };
   }
 
-  // sizes list
-  const sizesList = $('#sizes-list');
-  sizesList.innerHTML = '';
-  for (const val of state.sizes.slice().sort((a,b)=>a-b)){
-    const li = document.createElement('li');
-    li.className = 'size-item';
-    li.innerHTML = `
-      <input type="number" min="5" step="5" value="${val}" aria-label="minutes" />
-      <button class="del">Supprimer</button>
-    `;
-    const num = $('input', li); const del = $('.del', li);
-    num.addEventListener('change', ()=>{
-      const v = Math.max(5, Math.round(Number(num.value)||val));
-      // replace value
-      state.sizes = state.sizes.map(s=> s===val ? v : s);
-      state.sizes = Array.from(new Set(state.sizes));
-      saveSizes(state.sizes); renderSettings(); renderToday(); renderStats();
-    });
-    del.addEventListener('click', ()=>{
-      state.sizes = state.sizes.filter(s=>s!==val); if (state.sizes.length===0) state.sizes=[30];
-      saveSizes(state.sizes); renderSettings(); renderToday(); renderStats();
-    });
-    sizesList.appendChild(li);
+  if (handleInput){
+    handleInput.value = String(state.handleDiameter);
+    if (handleVal) handleVal.textContent = `${state.handleDiameter}px`;
+    handleInput.oninput = (e)=>{ state.handleDiameter = Number(e.target.value)||16; if (handleVal) handleVal.textContent = `${state.handleDiameter}px`; renderToday(); };
+    handleInput.onchange = ()=>{ saveHandleDiameter(state.handleDiameter); renderToday(); };
   }
+
+  // no sizes controls
 }
 
 function moveTheme(index, delta){
@@ -443,14 +411,8 @@ function moveTheme(index, delta){
 }
 
 $('#add-theme')?.addEventListener('click', ()=>{
-  const t = { id: uid(), name: 'Nouveau thème', icon:'✨', color: randomSoftColor(), category:'' };
+  const t = { id: uid(), name: 'Nouveau thème', icon:'', color: randomSoftColor(), category:'' };
   state.themes.push(t); saveThemes(state.themes); renderSettings(); renderToday();
-});
-
-$('#add-size')?.addEventListener('click', ()=>{
-  const def = 15;
-  state.sizes.push(def); state.sizes = Array.from(new Set(state.sizes));
-  saveSizes(state.sizes); renderSettings(); renderToday();
 });
 
 // Export / Import / Save-to-file
@@ -540,11 +502,10 @@ function renderWeekStrip(){
   const strip = $('#week-strip');
   strip.innerHTML = '';
   const selected = dateFromISO(state.date);
-  const weekday = (selected.getDay()+6)%7; // 0=Mon
-  const start = addDays(selected, -weekday);
   const entries = loadEntries();
-  for (let i=0;i<7;i++){
-    const d = addDays(start, i);
+  // Limiter à J-2 .. J+2 autour du jour sélectionné
+  for (let i=-2;i<=2;i++){
+    const d = addDays(selected, i);
     const iso = d.toISOString().slice(0,10);
     const e = entries[iso] || {pebbles:[]};
     const totals = totalsByTheme(e);
@@ -561,24 +522,22 @@ function renderWeekStrip(){
       acc += v;
     }
     const meta = document.createElement('div'); meta.className = 'meta';
-    meta.innerHTML = `<span>${fmtDateEU(iso)}</span><span>${total?fmtMins(total):''}</span>`;
+    meta.innerHTML = `<span>${fmtDateEU(iso)}</span>`;
     day.appendChild(stack); day.appendChild(meta);
     day.addEventListener('click', ()=>{ state.date = iso; $('#date').value = iso; renderToday(); });
     strip.appendChild(day);
   }
 }
 
-function smallestUnit(){ return Math.min(...state.sizes); }
+const RING_STEP_MINUTES = 15;
+const RING_MAX_MINUTES = 480; // 8h max par Dial
+function smallestUnit(){ return RING_STEP_MINUTES; }
 function decomposeMinutes(mins){
-  const sizes = state.sizes.slice().sort((a,b)=>b-a);
+  const step = RING_STEP_MINUTES;
   const out = [];
   let rest = Math.max(0, Math.round(mins));
-  for (const s of sizes){
-    while (rest >= s){ out.push(s); rest -= s; }
-  }
-  if (rest>0){ // round up to nearest size
-    out.push(sizes[sizes.length-1]);
-  }
+  while (rest >= step){ out.push(step); rest -= step; }
+  if (rest>0) out.push(step); // round up to nearest step
   return out;
 }
 function setThemeTotal(date, themeId, minutes){
@@ -593,33 +552,74 @@ function setThemeTotal(date, themeId, minutes){
 function drawRing(canvas, minutes, themeColor){
   const ctx = canvas.getContext('2d'); const w = canvas.width, h = canvas.height;
   const thickness = state.ringThickness || 16;
-  // Ensure the arc + shadow never gets clipped by the canvas edge
+  const knobD = state.handleDiameter || 16;
+  const tickOuter = 8; // max tick reach outside the ring
   const cx = w/2, cy = h/2;
-  const pad = (thickness/2) + 6; // half stroke + shadow blur
+  const pad = Math.max(thickness/2 + tickOuter + 2, knobD/2 + 4);
   const r = Math.max(0, Math.min(cx, cy) - pad);
   const textColor = bestTextColor(themeColor);
-  const stroke = mixColor(themeColor, '#000000', 0.35); // darker than pad bg
-  const track = mixColor(themeColor, '#ffffff', 0.70); // lighter subtle track
+  const hasTime = minutes > 0;
+  const track = mixColor(themeColor, '#ffffff', hasTime ? 0.78 : 0.88);
+  const stroke = hasTime ? themeColor : mixColor(themeColor, '#ffffff', 0.65);
+
   ctx.clearRect(0,0,w,h);
   ctx.lineCap='round'; ctx.lineJoin='round';
-  // subtle shadow for depth
-  ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.08)';
-  ctx.shadowBlur = 6; ctx.shadowOffsetY = 1;
+
+  // graduations (15 min minor, 60 min major)
+  const totalTicks = Math.round((RING_MAX_MINUTES/60) * 4); // heures * 4
+  for (let i=0;i<totalTicks;i++){
+    const a = -Math.PI/2 + (i/totalTicks)*2*Math.PI;
+    const isMajor = (i%4)===0;
+    const len = isMajor ? 6 : 3.5;
+    const lw = isMajor ? 2 : 1;
+    const ax = Math.cos(a), ay = Math.sin(a);
+    ctx.beginPath();
+    ctx.moveTo(cx + ax*(r + thickness/2 + 2), cy + ay*(r + thickness/2 + 2));
+    ctx.lineTo(cx + ax*(r + thickness/2 + 2 + len), cy + ay*(r + thickness/2 + 2 + len));
+    ctx.strokeStyle = isMajor ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.08)';
+    ctx.lineWidth = lw;
+    ctx.stroke();
+  }
+
+  // base track
   ctx.beginPath(); ctx.arc(cx,cy,r,-Math.PI/2,Math.PI*1.5);
   ctx.strokeStyle=track; ctx.lineWidth=thickness; ctx.stroke();
-  ctx.restore();
+
   // progress (avoid exact 2π to prevent cap artifact)
-  const frac = Math.min(1, Math.max(0, minutes/1440));
+  const frac = Math.min(1, Math.max(0, minutes/ RING_MAX_MINUTES));
   const endA = -Math.PI/2 + frac*2*Math.PI - 0.0001;
-  ctx.beginPath(); ctx.arc(cx,cy,r,-Math.PI/2, endA);
-  ctx.strokeStyle=stroke; ctx.lineWidth=thickness; ctx.stroke();
-  // center dot
-  ctx.beginPath();
-  ctx.arc(cx, cy, 2.5, 0, Math.PI*2);
-  ctx.fillStyle = (textColor==='#000000') ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.22)';
+  if (frac>0){
+    ctx.beginPath(); ctx.arc(cx,cy,r,-Math.PI/2, endA);
+    ctx.strokeStyle=stroke; ctx.lineWidth=thickness; ctx.stroke();
+  }
+
+  // inner shadow on inner edge of ring
+  const inner = r - thickness/2;
+  const shadowW = Math.min(10, thickness*0.6);
+  const grad = ctx.createRadialGradient(cx,cy, inner - shadowW/2, cx,cy, inner + shadowW/2);
+  grad.addColorStop(0, 'rgba(0,0,0,0.14)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.0)');
+  ctx.beginPath(); ctx.arc(cx,cy, inner, 0, Math.PI*2);
+  ctx.strokeStyle = grad; ctx.lineWidth = shadowW; ctx.stroke();
+
+  // knob / handle
+  const knobR = knobD/2;
+  const ka = frac>0 ? endA : -Math.PI/2; // top if 0
+  const kx = cx + Math.cos(ka)*r;
+  const ky = cy + Math.sin(ka)*r;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(kx, ky, knobR, 0, Math.PI*2);
+  ctx.fillStyle = stroke;
+  ctx.shadowColor = 'rgba(0,0,0,0.25)';
+  ctx.shadowBlur = 8;
   ctx.fill();
-  // text
+  ctx.restore();
+  // inner highlight for knob
+  ctx.beginPath(); ctx.arc(kx, ky, Math.max(1, knobR-2), 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.fill();
+
+  // text (only when > 0)
   ctx.fillStyle=textColor; ctx.font='600 13px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText(minutes?fmtMins(minutes):'', cx, cy);
 }
@@ -627,13 +627,17 @@ function initRing(canvas, currentMinutes, onChange){
   let dragging=false;
   const update = (ev)=>{
     const rect = canvas.getBoundingClientRect();
-    const x = (ev.touches?ev.touches[0].clientX:ev.clientX) - rect.left - canvas.width/2;
-    const y = (ev.touches?ev.touches[0].clientY:ev.clientY) - rect.top - canvas.height/2;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const cx = (ev.touches?ev.touches[0].clientX:ev.clientX) - rect.left;
+    const cy = (ev.touches?ev.touches[0].clientY:ev.clientY) - rect.top;
+    const x = cx*scaleX - canvas.width/2;
+    const y = cy*scaleY - canvas.height/2;
     const ang = Math.atan2(y,x); // -PI..PI where 0 is right
     let a = ang - (-Math.PI/2); // relative to top
     if (a<0) a += 2*Math.PI;
     const frac = a/(2*Math.PI);
-    const mins = Math.round(frac*1440/ smallestUnit())*smallestUnit();
+    const mins = Math.round(frac*RING_MAX_MINUTES/ smallestUnit())*smallestUnit();
     onChange(mins);
   };
   const start = (ev)=>{ dragging=true; update(ev); ev.preventDefault(); };
@@ -648,7 +652,7 @@ function initRing(canvas, currentMinutes, onChange){
 }
 
 function exportData(){
-  return { version:2, user: state.user, themes: state.themes, entries: loadEntries(), sizes: state.sizes, pebbleColorTray: state.pebbleTray, pebbleColorChip: state.pebbleChip, ringThickness: state.ringThickness };
+  return { version:2, user: state.user, themes: state.themes, entries: loadEntries(), sizes: state.sizes, pebbleColorTray: state.pebbleTray, pebbleColorChip: state.pebbleChip, ringThickness: state.ringThickness, handleDiameter: state.handleDiameter };
 }
 function importData(data){
   if (!data || typeof data!=='object') throw new Error('bad');
@@ -661,6 +665,7 @@ function importData(data){
     state.pebbleTray = data.pebbleColor; state.pebbleChip = data.pebbleColor; savePebbleColorTray(state.pebbleTray); savePebbleColorChip(state.pebbleChip);
   }
   if (Number.isFinite(data.ringThickness)) { state.ringThickness = data.ringThickness; saveRingThickness(state.ringThickness); }
+  if (Number.isFinite(data.handleDiameter)) { state.handleDiameter = data.handleDiameter; saveHandleDiameter(state.handleDiameter); }
   state.themes = loadThemes();
   state.sizes = loadSizes();
   applyPebbleColors();
@@ -678,10 +683,12 @@ function boot(){
     state.pebbleTray = loadPebbleColorTray();
     state.pebbleChip = loadPebbleColorChip();
     state.ringThickness = loadRingThickness();
+    state.handleDiameter = loadHandleDiameter();
     applyPebbleColors();
     setHeaderHeightVar();
     initDate();
     renderToday();
+    window.addEventListener('resize', ()=>{ if (state.tab==='today') renderToday(); }, { passive:true });
   })();
 }
 document.addEventListener('DOMContentLoaded', boot);
@@ -699,12 +706,14 @@ function initUserSelector(){
     state.pebbleTray = '#edeae4';
     state.pebbleChip = '#edeae4';
     state.ringThickness = 16;
+    state.handleDiameter = 16;
     await tryLoadFromServer(state.user);
     if (!state.themes.length) state.themes = loadThemes();
     if (!state.sizes.length) state.sizes = loadSizes();
     state.pebbleTray = loadPebbleColorTray();
     state.pebbleChip = loadPebbleColorChip();
     state.ringThickness = loadRingThickness();
+    state.handleDiameter = loadHandleDiameter();
     applyPebbleColors();
     renderSettings(); renderToday(); renderStats();
   };
@@ -730,6 +739,7 @@ async function tryLoadFromServer(user){
       if (typeof data.pebbleColorChip==='string') { state.pebbleChip = data.pebbleColorChip; savePebbleColorChip(state.pebbleChip, user); }
       else if (typeof data.pebbleColor==='string') { state.pebbleTray = data.pebbleColor; state.pebbleChip = data.pebbleColor; savePebbleColorTray(state.pebbleTray, user); savePebbleColorChip(state.pebbleChip, user); }
       if (Number.isFinite(data.ringThickness)) { state.ringThickness = data.ringThickness; saveRingThickness(state.ringThickness, user); }
+      if (Number.isFinite(data.handleDiameter)) { state.handleDiameter = data.handleDiameter; saveHandleDiameter(state.handleDiameter, user); }
       return true;
     }
   }catch{}
