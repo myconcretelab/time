@@ -13,23 +13,9 @@ const todayStr = () => new Date().toISOString().slice(0,10);
 const fmtDateEU = (iso) => { const [y,m,d]=iso.split('-'); return `${d}/${m}`; };
 const uid = () => Math.random().toString(36).slice(2,9);
 
-// ---------- Storage ----------
-const KEYS = {
-  user: 'time/user',
-  themes: (u)=>`time/${u}/themes`,
-  entries: (u)=>`time/${u}/entries`,
-  sizes: (u)=>`time/${u}/sizes`,
-  pebbleColor: (u)=>`time/${u}/pebbleColor`, // legacy single color
-  pebbleColorTray: (u)=>`time/${u}/pebbleColorTray`,
-  pebbleColorChip: (u)=>`time/${u}/pebbleColorChip`,
-  ringThickness: (u)=>`time/${u}/ringThickness`,
-  handleDiameter: (u)=>`time/${u}/handleDiameter`
-};
-
-function loadThemes(user=state.user){
-  const raw = localStorage.getItem(KEYS.themes(user));
-  if (raw) return JSON.parse(raw);
-  const defaults = [
+// ---------- Storage (JSON/server only, no localStorage) ----------
+function defaultThemes(){
+  return [
     {id: uid(), name:'Travail manuel', icon:'🧰', color:'#c98b6b', category:'pro'},
     {id: uid(), name:'Enfants', icon:'🧒', color:'#f2a65a', category:'famille'},
     {id: uid(), name:'Création', icon:'🎨', color:'#8bb2b2', category:'créatif'},
@@ -37,58 +23,38 @@ function loadThemes(user=state.user){
     {id: uid(), name:'Présence', icon:'💞', color:'#c7a0c5', category:'relation'},
     {id: uid(), name:'Administratif', icon:'🗂️', color:'#a5a2a1', category:'tâches'},
   ];
-  localStorage.setItem(KEYS.themes(user), JSON.stringify(defaults));
-  return defaults;
 }
-function saveThemes(themes, user=state.user){ localStorage.setItem(KEYS.themes(user), JSON.stringify(themes)); scheduleSync(); }
 
-function loadEntries(user=state.user){
-  const raw = localStorage.getItem(KEYS.entries(user));
-  return raw ? JSON.parse(raw) : {};
-}
-function saveEntries(entries, user=state.user){ localStorage.setItem(KEYS.entries(user), JSON.stringify(entries)); scheduleSync(); }
-
-function loadSizes(user=state.user){
-  const raw = localStorage.getItem(KEYS.sizes(user));
-  if (raw) return JSON.parse(raw);
-  const defaults = [30, 60];
-  localStorage.setItem(KEYS.sizes(user), JSON.stringify(defaults));
-  return defaults;
-}
-function saveSizes(sizes, user=state.user){ localStorage.setItem(KEYS.sizes(user), JSON.stringify(sizes)); scheduleSync(); }
-
-function loadPebbleColorTray(user=state.user){
-  return localStorage.getItem(KEYS.pebbleColorTray(user)) || localStorage.getItem(KEYS.pebbleColor(user)) || '#edeae4';
-}
-function savePebbleColorTray(color, user=state.user){
-  localStorage.setItem(KEYS.pebbleColorTray(user), color);
+function loadThemes(){
+  if (state.themes && state.themes.length) return state.themes;
+  state.themes = defaultThemes();
   scheduleSync();
+  return state.themes;
 }
-function loadPebbleColorChip(user=state.user){
-  return localStorage.getItem(KEYS.pebbleColorChip(user)) || localStorage.getItem(KEYS.pebbleColor(user)) || '#edeae4';
-}
-function savePebbleColorChip(color, user=state.user){
-  localStorage.setItem(KEYS.pebbleColorChip(user), color);
-  scheduleSync();
-}
+function saveThemes(themes){ state.themes = Array.isArray(themes) ? themes.slice() : []; scheduleSync(); }
 
-function loadRingThickness(user=state.user){
-  const v = Number(localStorage.getItem(KEYS.ringThickness(user)));
-  return Number.isFinite(v) && v>0 ? v : 16;
-}
-function saveRingThickness(px, user=state.user){
-  localStorage.setItem(KEYS.ringThickness(user), String(px));
-  scheduleSync();
-}
+function loadEntries(){ return state.entries || (state.entries = {}); }
+function saveEntries(entries){ state.entries = entries && typeof entries==='object' ? entries : {}; scheduleSync(); }
 
-function loadHandleDiameter(user=state.user){
-  const v = Number(localStorage.getItem(KEYS.handleDiameter(user)));
-  return Number.isFinite(v) && v>0 ? v : 16;
-}
-function saveHandleDiameter(px, user=state.user){
-  localStorage.setItem(KEYS.handleDiameter(user), String(px));
+function loadSizes(){
+  if (state.sizes && state.sizes.length) return state.sizes;
+  state.sizes = [30, 60];
   scheduleSync();
+  return state.sizes;
 }
+function saveSizes(sizes){ state.sizes = Array.isArray(sizes) ? sizes.slice() : []; scheduleSync(); }
+
+function loadPebbleColorTray(){ return state.pebbleTray || '#edeae4'; }
+function savePebbleColorTray(color){ state.pebbleTray = color || '#edeae4'; scheduleSync(); }
+
+function loadPebbleColorChip(){ return state.pebbleChip || '#edeae4'; }
+function savePebbleColorChip(color){ state.pebbleChip = color || '#edeae4'; scheduleSync(); }
+
+function loadRingThickness(){ return Number.isFinite(state.ringThickness) && state.ringThickness>0 ? state.ringThickness : 16; }
+function saveRingThickness(px){ state.ringThickness = Number(px)||16; scheduleSync(); }
+
+function loadHandleDiameter(){ return Number.isFinite(state.handleDiameter) && state.handleDiameter>0 ? state.handleDiameter : 16; }
+function saveHandleDiameter(px){ state.handleDiameter = Number(px)||16; scheduleSync(); }
 
 function getEntry(date){
   const entries = loadEntries();
@@ -104,9 +70,10 @@ function setEntry(date, entry){
 let state = {
   tab: 'today',
   date: todayStr(),
-  user: localStorage.getItem(KEYS.user) || 'Seb',
+  user: 'Seb',
   themes: [],
   sizes: [],
+  entries: {},
   pebbleTray: '#edeae4',
   pebbleChip: '#edeae4',
   ringThickness: 16,
@@ -700,9 +667,9 @@ function initUserSelector(){
   sel.value = state.user;
   sel.onchange = async ()=>{
     state.user = sel.value;
-    localStorage.setItem(KEYS.user, state.user);
     state.themes = [];
     state.sizes = [];
+    state.entries = {};
     state.pebbleTray = '#edeae4';
     state.pebbleChip = '#edeae4';
     state.ringThickness = 16;
@@ -732,14 +699,14 @@ async function tryLoadFromServer(user){
     if (!r.ok) return false;
     const data = await r.json();
     if (data && typeof data==='object'){
-      if (Array.isArray(data.themes)) { state.themes = data.themes; saveThemes(state.themes, user); }
-      if (Array.isArray(data.sizes)) { state.sizes = data.sizes; saveSizes(state.sizes, user); }
-      if (data.entries && typeof data.entries==='object') { saveEntries(data.entries, user); }
-      if (typeof data.pebbleColorTray==='string') { state.pebbleTray = data.pebbleColorTray; savePebbleColorTray(state.pebbleTray, user); }
-      if (typeof data.pebbleColorChip==='string') { state.pebbleChip = data.pebbleColorChip; savePebbleColorChip(state.pebbleChip, user); }
-      else if (typeof data.pebbleColor==='string') { state.pebbleTray = data.pebbleColor; state.pebbleChip = data.pebbleColor; savePebbleColorTray(state.pebbleTray, user); savePebbleColorChip(state.pebbleChip, user); }
-      if (Number.isFinite(data.ringThickness)) { state.ringThickness = data.ringThickness; saveRingThickness(state.ringThickness, user); }
-      if (Number.isFinite(data.handleDiameter)) { state.handleDiameter = data.handleDiameter; saveHandleDiameter(state.handleDiameter, user); }
+      if (Array.isArray(data.themes)) { state.themes = data.themes; }
+      if (Array.isArray(data.sizes)) { state.sizes = data.sizes; }
+      if (data.entries && typeof data.entries==='object') { state.entries = data.entries; }
+      if (typeof data.pebbleColorTray==='string') { state.pebbleTray = data.pebbleColorTray; }
+      if (typeof data.pebbleColorChip==='string') { state.pebbleChip = data.pebbleColorChip; }
+      else if (typeof data.pebbleColor==='string') { state.pebbleTray = data.pebbleColor; state.pebbleChip = data.pebbleColor; }
+      if (Number.isFinite(data.ringThickness)) { state.ringThickness = data.ringThickness; }
+      if (Number.isFinite(data.handleDiameter)) { state.handleDiameter = data.handleDiameter; }
       return true;
     }
   }catch{}
