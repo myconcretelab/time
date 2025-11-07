@@ -74,6 +74,8 @@ let state = {
   date: todayStr(),
   user: 'Seb',
   themes: [],
+  emotions: [],
+  emotionColors: {},
   sizes: [],
   entries: {},
   pebbleTray: '#edeae4',
@@ -84,9 +86,25 @@ let state = {
     chartType: 'donut',
     asPercent: false,
     groupBy: 'theme',
-    hiddenGroups: new Set()
+    hiddenGroups: new Set(),
+    hiddenEmotions: new Set()
   }
 };
+
+function defaultEmotions(){
+  // default set with associated colors
+  return {
+    list: ['😊','😌','🤗','😴','🌧️','🌞'],
+    colors: {
+      '😊':'#f6b94e', // warm yellow
+      '😌':'#8bb2d9', // calm blue
+      '🤗':'#c7a0c5', // lavender
+      '😴':'#9aa380', // muted olive
+      '🌧️':'#7e9aa6', // rainy blue-grey
+      '🌞':'#f29f67', // sunny orange
+    }
+  };
+}
 
 // ---------- Tabs ----------
 function initTabs(){
@@ -195,15 +213,24 @@ function renderToday(skipWeekStrip=false){
 
   // emotion
   const picker = $('#emotion-picker');
-  $$('.emotion', picker).forEach(btn=>{
-    btn.classList.toggle('selected', btn.dataset.emotion === (entry.emotion||''));
-    btn.onclick = () => {
-      const e = getEntry(state.date);
-      e.emotion = (e.emotion===btn.dataset.emotion) ? '' : btn.dataset.emotion;
-      setEntry(state.date, e);
-      renderToday();
-    };
-  });
+  if (picker){
+    // build buttons from state.emotions
+    picker.innerHTML = '';
+    for (const emo of state.emotions){
+      const btn = document.createElement('button');
+      btn.className = 'emotion';
+      btn.dataset.emotion = emo;
+      btn.textContent = emo;
+      if ((entry.emotion||'') === emo) btn.classList.add('selected');
+      btn.onclick = () => {
+        const e = getEntry(state.date);
+        e.emotion = (e.emotion===emo) ? '' : emo;
+        setEntry(state.date, e);
+        renderToday();
+      };
+      picker.appendChild(btn);
+    }
+  }
   // note
   const noteEl = $('#note');
   noteEl.value = entry.note || '';
@@ -342,6 +369,43 @@ function renderStats(){
 
   renderLegend($('#stats-legend'), donutData);
 
+  // ----- Emotion stats -----
+  const EMOTIONS = (state.emotions && state.emotions.length) ? state.emotions.slice() : defaultEmotions().list;
+  const EMOTION_COLORS = Object.assign({}, defaultEmotions().colors, state.emotionColors||{});
+  // total counts per emotion in range
+  const emotionCounts = new Map();
+  for (const e of EMOTIONS) emotionCounts.set(e, 0);
+  for (const d of datesSparse){
+    const emo = entries[d]?.emotion || '';
+    if (emo && emotionCounts.has(emo)) emotionCounts.set(emo, (emotionCounts.get(emo)||0)+1);
+  }
+  const emotionPieData = EMOTIONS.map(e=>({
+    id: e,
+    minutes: emotionCounts.get(e)||0, // reuse field name for pie API
+    theme: { name: e, color: EMOTION_COLORS[e]||'#ccc' }
+  })).filter(d=>d.minutes>0 || true); // always show slices (0 will render empty)
+  // Weekday breakdown (Mon..Sun)
+  const dayIndex = (iso)=> (new Date(iso).getDay()+6)%7; // 0..6, 0=Mon
+  const weekly = Array.from({length:7}, ()=> new Map(EMOTIONS.map(e=>[e,0])));
+  for (const d of datesSparse){
+    const emo = entries[d]?.emotion || '';
+    if (!emo) continue;
+    const idx = dayIndex(d);
+    const map = weekly[idx];
+    map.set(emo, (map.get(emo)||0)+1);
+  }
+  const emotionGroups = EMOTIONS.map(e=>({ key:e, name:e, color: EMOTION_COLORS[e]||'#ccc' }));
+
+  // Draw emotion donut
+  const emoPieCanvas = document.getElementById('emotion-pie');
+  drawPie(emoPieCanvas, emotionPieData.filter(d=>!state.stats.hiddenEmotions.has(d.id)));
+
+  // Draw emotion weekday bars
+  const emoBarsCanvas = document.getElementById('emotion-weekday');
+  drawStackedBarsWeekdays(emoBarsCanvas, weekly, emotionGroups, { asPercent: state.stats.asPercent, hidden: state.stats.hiddenEmotions });
+
+  renderEmotionLegend($('#emotion-legend'), emotionPieData);
+
   // Hook up control changes (idempotent)
   rangeSel.onchange = renderStats;
   chartSel.onchange = renderStats;
@@ -392,6 +456,79 @@ function drawPie(canvas, data){
   ctx.beginPath(); ctx.arc(cx,cy, r*ringRatio, 0, Math.PI*2);
   const lw = Math.max(0.5, Math.min(3, (state.handleDiameter||16)/12));
   ctx.lineWidth = lw; ctx.strokeStyle = 'rgba(0,0,0,0.10)'; ctx.stroke();
+}
+
+function renderEmotionLegend(el, data){
+  el.innerHTML = '';
+  const total = data.reduce((a,b)=>a+b.minutes, 0);
+  for (const d of data){
+    const row = document.createElement('div'); row.className = 'legend-item';
+    const key = d.id;
+    const hidden = state.stats.hiddenEmotions.has(key);
+    row.innerHTML = `
+      <input type=\"checkbox\" class=\"toggle\" ${hidden? '':'checked'} aria-label=\"Afficher ${escapeHtml(d.theme?.name||'')}\">\n      <span class=\"swatch\" style=\"background:${d.theme?.color||'#ccc'}\"></span>\n      <span class=\"name\">${d.theme?.name||'—'}</span>\n      <span class=\"time\">${d.minutes||0} ${total?`· ${Math.round(100*(d.minutes||0)/total)}%`:''}</span>
+    `;
+    row.querySelector('.toggle').addEventListener('change', (e)=>{
+      if (e.target.checked) state.stats.hiddenEmotions.delete(key); else state.stats.hiddenEmotions.add(key);
+      renderStats();
+    });
+    el.appendChild(row);
+  }
+  if (!data.length){ el.innerHTML = '<div style="color:var(--muted)">Aucune émotion sur la période.</div>'; }
+}
+
+function drawStackedBarsWeekdays(canvas, weekly, groups, opts={}){
+  const hidden = opts.hidden || new Set();
+  const cssW = Math.min(900, Math.max(360, canvas.parentElement?.clientWidth||640));
+  const cssH = 280;
+  const { ctx } = setupHiDPI(canvas, cssW, cssH);
+  ctx.clearRect(0,0, cssW, cssH);
+  const padL = 36, padR = 10, padT = 10, padB = 24;
+  const innerW = (cssW - padL - padR);
+  const innerH = (cssH - padT - padB);
+  const n = 7;
+  const bw = Math.max(8, innerW / n - 12);
+  const daysFR = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+
+  // scales
+  let maxY = 0;
+  for (let i=0;i<7;i++){
+    const by = weekly[i];
+    const sum = Array.from(by.entries()).reduce((a,[k,v])=> a + (hidden.has(k)?0:v), 0);
+    if (opts.asPercent) maxY = 100; else maxY = Math.max(maxY, sum);
+  }
+  maxY = Math.max(1, maxY);
+  const scaleY = (v)=> innerH * (v / maxY);
+
+  // axis
+  ctx.strokeStyle='rgba(0,0,0,0.1)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(padL, cssH-padB); ctx.lineTo(cssW-padR, cssH-padB); ctx.stroke();
+
+  // bars
+  for (let i=0;i<7;i++){
+    const x0 = padL + i*(bw+12);
+    const by = weekly[i];
+    let acc = 0;
+    for (const g of groups){
+      if (hidden.has(g.key)) continue;
+      const vRaw = by.get(g.key)||0;
+      const dayTotal = Array.from(by.entries()).reduce((a,[k,v])=> a + (hidden.has(k)?0:v), 0);
+      const v = opts.asPercent ? (dayTotal? (100*vRaw/dayTotal) : 0) : vRaw;
+      const hpx = scaleY(v);
+      if (!hpx) continue;
+      const y = cssH - padB - acc - hpx;
+      ctx.fillStyle = g.color;
+      ctx.fillRect(x0, y, bw, hpx);
+      acc += hpx;
+    }
+  }
+
+  // labels
+  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.font='11px system-ui'; ctx.textAlign='center'; ctx.textBaseline='top';
+  for (let i=0;i<7;i++){
+    const x = padL + i*(bw+12) + bw/2;
+    ctx.fillText(daysFR[i], x, cssH - padB + 4);
+  }
 }
 
 function renderLegend(el, data){
@@ -555,16 +692,19 @@ function renderSettings(){
         <button class="down" title="Descendre">▼</button>
       </div>
       <input class="name" type="text" value="${escapeHtml(t.name)}" aria-label="Nom" />
+      <input class="category" type="text" value="${escapeHtml(t.category||'')}" aria-label="Catégorie" placeholder="Catégorie" />
       <input class="color" type="color" value="${t.color}" aria-label="Couleur" />
       <button class="del" title="Supprimer">Supprimer</button>
     `;
     const sw = li.querySelector('.swatch');
     const nameInput = li.querySelector('.name');
+    const catInput = li.querySelector('.category');
     const colorInput = li.querySelector('.color');
     const delBtn = li.querySelector('.del');
     const upBtn = li.querySelector('.up');
     const downBtn = li.querySelector('.down');
     nameInput.addEventListener('change', ()=>{ t.name = nameInput.value; saveThemes(state.themes); renderToday(); renderStats(); });
+    catInput.addEventListener('change', ()=>{ t.category = catInput.value; saveThemes(state.themes); renderStats(); });
     colorInput.addEventListener('input', ()=>{ t.color = colorInput.value; sw.style.background = t.color; saveThemes(state.themes); renderToday(); renderStats(); });
     delBtn.addEventListener('click', ()=>{
       if (!confirm(`Supprimer le thème "${t.name}" ?`)) return;
@@ -605,6 +745,83 @@ function renderSettings(){
   }
 
   // no sizes controls
+
+  // emotions editor
+  const emoUL = document.getElementById('emotions-list');
+  if (emoUL){
+    emoUL.innerHTML = '';
+    const list = state.emotions || [];
+    for (let i=0;i<list.length;i++){
+      const e = list[i];
+      const li = document.createElement('li');
+      li.className = 'theme-item';
+      const color = (state.emotionColors && state.emotionColors[e]) || '#cccccc';
+      li.innerHTML = `
+        <span class="swatch" style="background:${color}"></span>
+        <div class="move">
+          <button class="up" title="Monter">▲</button>
+          <button class="down" title="Descendre">▼</button>
+        </div>
+        <input class="emoji" type="text" value="${escapeHtml(e)}" aria-label="Émotion" />
+        <input class="color" type="color" value="${color}" aria-label="Couleur" />
+        <button class="del" title="Supprimer">Supprimer</button>
+      `;
+      const sw = li.querySelector('.swatch');
+      const emojiInput = li.querySelector('.emoji');
+      const colorInput = li.querySelector('.color');
+      const upBtn = li.querySelector('.up');
+      const downBtn = li.querySelector('.down');
+      const delBtn = li.querySelector('.del');
+      // change emoji: update list and migrate color mapping
+      emojiInput.addEventListener('change', ()=>{
+        const newVal = emojiInput.value || '';
+        const oldVal = list[i];
+        if (newVal===oldVal) return;
+        // update entries: migrate old emotion to new
+        const entries = loadEntries();
+        for (const k of Object.keys(entries)){
+          if (entries[k].emotion === oldVal) entries[k].emotion = newVal;
+        }
+        // move color mapping
+        const col = state.emotionColors[oldVal];
+        delete state.emotionColors[oldVal];
+        if (col) state.emotionColors[newVal] = col;
+        list[i] = newVal;
+        state.emotions = list.slice();
+        scheduleSync();
+        renderSettings(); renderToday(); renderStats();
+      });
+      colorInput.addEventListener('input', ()=>{
+        state.emotionColors[e] = colorInput.value;
+        sw.style.background = colorInput.value;
+        scheduleSync();
+        renderStats();
+      });
+      upBtn.addEventListener('click', ()=>{ if (i>0){ const tmp=list[i-1]; list[i-1]=list[i]; list[i]=tmp; state.emotions=list.slice(); scheduleSync(); renderSettings(); renderToday(); renderStats(); }});
+      downBtn.addEventListener('click', ()=>{ if (i<list.length-1){ const tmp=list[i+1]; list[i+1]=list[i]; list[i]=tmp; state.emotions=list.slice(); scheduleSync(); renderSettings(); renderToday(); renderStats(); }});
+      delBtn.addEventListener('click', ()=>{
+        state.emotions = list.filter((_,idx)=>idx!==i);
+        // keep past data as-is; color mapping can be kept or cleaned
+        scheduleSync();
+        renderSettings(); renderToday(); renderStats();
+      });
+      emoUL.appendChild(li);
+    }
+    const addBtn = document.getElementById('add-emotion');
+    if (addBtn){
+      addBtn.onclick = ()=>{
+        const d = defaultEmotions();
+        const fallback = '🙂';
+        const newEmoji = fallback;
+        if (!state.emotions) state.emotions = [];
+        state.emotions.push(newEmoji);
+        if (!state.emotionColors) state.emotionColors = {};
+        state.emotionColors[newEmoji] = '#cccccc';
+        scheduleSync();
+        renderSettings(); renderToday(); renderStats();
+      };
+    }
+  }
 }
 
 function moveTheme(index, delta){
@@ -862,13 +1079,27 @@ function initRing(canvas, currentMinutes, onChange){
 }
 
 function exportData(){
-  return { version:2, user: state.user, themes: state.themes, entries: loadEntries(), sizes: state.sizes, pebbleColorTray: state.pebbleTray, pebbleColorChip: state.pebbleChip, ringThickness: state.ringThickness, handleDiameter: state.handleDiameter };
+  return {
+    version:3,
+    user: state.user,
+    themes: state.themes,
+    entries: loadEntries(),
+    sizes: state.sizes,
+    emotions: state.emotions,
+    emotionColors: state.emotionColors,
+    pebbleColorTray: state.pebbleTray,
+    pebbleColorChip: state.pebbleChip,
+    ringThickness: state.ringThickness,
+    handleDiameter: state.handleDiameter
+  };
 }
 function importData(data){
   if (!data || typeof data!=='object') throw new Error('bad');
   if (Array.isArray(data.themes)) saveThemes(data.themes);
   if (data.entries && typeof data.entries==='object') saveEntries(data.entries);
   if (Array.isArray(data.sizes) && data.sizes.length) saveSizes(data.sizes);
+  if (Array.isArray(data.emotions)) state.emotions = data.emotions.slice();
+  if (data.emotionColors && typeof data.emotionColors==='object') state.emotionColors = Object.assign({}, data.emotionColors);
   if (typeof data.pebbleColorTray === 'string') { state.pebbleTray = data.pebbleColorTray; savePebbleColorTray(state.pebbleTray); }
   if (typeof data.pebbleColorChip === 'string') { state.pebbleChip = data.pebbleColorChip; savePebbleColorChip(state.pebbleChip); }
   if (!data.pebbleColorTray && !data.pebbleColorChip && typeof data.pebbleColor==='string'){
@@ -876,6 +1107,8 @@ function importData(data){
   }
   if (Number.isFinite(data.ringThickness)) { state.ringThickness = data.ringThickness; saveRingThickness(state.ringThickness); }
   if (Number.isFinite(data.handleDiameter)) { state.handleDiameter = data.handleDiameter; saveHandleDiameter(state.handleDiameter); }
+  // Defaults for emotions if missing
+  if (!state.emotions.length){ const d = defaultEmotions(); state.emotions = d.list.slice(); state.emotionColors = Object.assign({}, d.colors); }
   state.themes = loadThemes();
   state.sizes = loadSizes();
   applyPebbleColors();
@@ -890,6 +1123,7 @@ function boot(){
     await tryLoadFromServer(state.user);
     if (!state.themes.length) state.themes = loadThemes();
     if (!state.sizes.length) state.sizes = loadSizes();
+    if (!state.emotions.length){ const d = defaultEmotions(); state.emotions = d.list.slice(); state.emotionColors = Object.assign({}, d.colors); }
     state.pebbleTray = loadPebbleColorTray();
     state.pebbleChip = loadPebbleColorChip();
     state.ringThickness = loadRingThickness();
@@ -920,6 +1154,7 @@ function initUserSelector(){
     await tryLoadFromServer(state.user);
     if (!state.themes.length) state.themes = loadThemes();
     if (!state.sizes.length) state.sizes = loadSizes();
+    if (!state.emotions.length){ const d = defaultEmotions(); state.emotions = d.list.slice(); state.emotionColors = Object.assign({}, d.colors); }
     state.pebbleTray = loadPebbleColorTray();
     state.pebbleChip = loadPebbleColorChip();
     state.ringThickness = loadRingThickness();
@@ -945,6 +1180,8 @@ async function tryLoadFromServer(user){
       if (Array.isArray(data.themes)) { state.themes = data.themes; }
       if (Array.isArray(data.sizes)) { state.sizes = data.sizes; }
       if (data.entries && typeof data.entries==='object') { state.entries = data.entries; }
+      if (Array.isArray(data.emotions)) { state.emotions = data.emotions; }
+      if (data.emotionColors && typeof data.emotionColors==='object') { state.emotionColors = data.emotionColors; }
       if (typeof data.pebbleColorTray==='string') { state.pebbleTray = data.pebbleColorTray; }
       if (typeof data.pebbleColorChip==='string') { state.pebbleChip = data.pebbleColorChip; }
       else if (typeof data.pebbleColor==='string') { state.pebbleTray = data.pebbleColor; state.pebbleChip = data.pebbleColor; }

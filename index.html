@@ -27,14 +27,7 @@
         <div id="buckets" class="buckets" aria-live="polite"></div>
 
         <div class="note-area">
-          <div class="emotion-picker" id="emotion-picker" aria-label="Émotion du jour">
-            <button class="emotion" data-emotion="😊">😊</button>
-            <button class="emotion" data-emotion="😌">😌</button>
-            <button class="emotion" data-emotion="🤗">🤗</button>
-            <button class="emotion" data-emotion="😴">😴</button>
-            <button class="emotion" data-emotion="🌧️">🌧️</button>
-            <button class="emotion" data-emotion="🌞">🌞</button>
-          </div>
+          <div class="emotion-picker" id="emotion-picker" aria-label="Émotion du jour"></div>
           <textarea id="note" rows="3" placeholder="Une petite note, une sensation, un souvenir… (facultatif)"></textarea>
         </div>
       </section>
@@ -69,6 +62,13 @@
           <canvas id="heatmap" width="640" height="220" aria-label="Chaleur par jour de la semaine" role="img" style="display:none"></canvas>
           <div id="stats-legend" class="legend"></div>
         </div>
+
+        <h3>Émotions</h3>
+        <div class="charts">
+          <canvas id="emotion-pie" width="360" height="360" aria-label="Répartition des émotions" role="img"></canvas>
+          <canvas id="emotion-weekday" width="640" height="280" aria-label="Émotions par jour de la semaine" role="img"></canvas>
+          <div id="emotion-legend" class="legend"></div>
+        </div>
       </section>
 
       <!-- Settings View -->
@@ -77,6 +77,12 @@
           <button id="add-theme" class="ghost">+ Ajouter un thème</button>
         </div>
         <ul id="themes-list" class="themes-list"></ul>
+
+        <h3>Émotions</h3>
+        <div class="settings-actions">
+          <button id="add-emotion" class="ghost">+ Ajouter une émotion</button>
+        </div>
+        <ul id="emotions-list" class="themes-list"></ul>
 
         <h3>Apparence</h3>
         <div class="appearance">

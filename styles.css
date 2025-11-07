@@ -156,7 +156,7 @@ textarea#note{border:1px solid var(--soft); background:var(--paper); border-radi
 .settings-actions{display:flex; justify-content:flex-end; margin:.5rem 0 1rem}
 .ghost{background:transparent; border:1px dashed var(--accent); color:var(--accent); border-radius:.6rem; padding:.4rem .7rem; cursor:pointer}
 .themes-list{list-style:none; padding:0; margin:0; display:grid; gap:.6rem}
-.theme-item{display:grid; grid-template-columns:auto auto 1fr 120px auto auto; gap:.5rem; align-items:center; background:transparent; border:1px solid var(--soft); border-radius:.8rem; padding:.6rem}
+.theme-item{display:grid; grid-template-columns:auto auto 1fr 160px 120px auto; gap:.5rem; align-items:center; background:transparent; border:1px solid var(--soft); border-radius:.8rem; padding:.6rem}
 .theme-item input[type=text]{border:1px solid var(--soft); border-radius:.5rem; padding:.35rem .5rem}
 .theme-item .del{background:transparent; border:1px solid var(--soft); border-radius:.5rem; padding:.3rem .5rem; cursor:pointer}
 .theme-item .move{display:flex; gap:.3rem}

@@ -53,9 +53,12 @@ const server = http.createServer(async (req, res) => {
       themes: outRaw.themes || [],
       entries: outRaw.entries || {},
       sizes: outRaw.sizes || [],
+      emotions: outRaw.emotions || [],
+      emotionColors: outRaw.emotionColors || {},
       pebbleColorTray: outRaw.pebbleColorTray || outRaw.pebbleColor || '#edeae4',
       pebbleColorChip: outRaw.pebbleColorChip || outRaw.pebbleColor || '#edeae4',
       ringThickness: Number.isFinite(outRaw.ringThickness) ? outRaw.ringThickness : 16,
+      handleDiameter: Number.isFinite(outRaw.handleDiameter) ? outRaw.handleDiameter : 16,
     };
     return send(res, 200, JSON.stringify(out), {'Content-Type':'application/json; charset=utf-8'});
   }
@@ -68,7 +71,18 @@ const server = http.createServer(async (req, res) => {
         const data = JSON.parse(body||'{}');
         const user = data.user || 'Seb';
         const db = readData();
-        db.users[user] = { themes: data.themes||[], entries: data.entries||{}, sizes: data.sizes||[], pebbleColor: data.pebbleColor||undefined, pebbleColorTray: data.pebbleColorTray||'#edeae4', pebbleColorChip: data.pebbleColorChip||'#edeae4', ringThickness: Number.isFinite(data.ringThickness)? data.ringThickness : 16 };
+        db.users[user] = {
+          themes: data.themes||[],
+          entries: data.entries||{},
+          sizes: data.sizes||[],
+          emotions: data.emotions||[],
+          emotionColors: data.emotionColors||{},
+          pebbleColor: data.pebbleColor||undefined,
+          pebbleColorTray: data.pebbleColorTray||'#edeae4',
+          pebbleColorChip: data.pebbleColorChip||'#edeae4',
+          ringThickness: Number.isFinite(data.ringThickness)? data.ringThickness : 16,
+          handleDiameter: Number.isFinite(data.handleDiameter)? data.handleDiameter : 16
+        };
         writeData(db);
         return send(res, 200, JSON.stringify({ok:true}), {'Content-Type':'application/json; charset=utf-8'});
       }catch(err){ return send(res, 400, 'bad json'); }
