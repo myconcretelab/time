@@ -10,6 +10,7 @@
   --pebble-tray-fg:#2d2a26;
   --pebble-chip-bg:#edeae4;
   --pebble-chip-fg:#2d2a26;
+  --bottom-nav-h: calc(56px + env(safe-area-inset-bottom, 0px));
 }
 
 *{box-sizing:border-box}
@@ -45,7 +46,7 @@ main{max-width:1000px; margin:0 auto; padding:1rem}
 .view.active{display:block}
 
 /* Bottom nav */
-.bottom-nav{position:fixed; bottom:0; left:0; right:0; z-index:20; background:var(--ink); border-top:1px solid color-mix(in srgb, var(--ink) 70%, #fff 30%); display:flex; justify-content:space-between; align-items:center; height:56px; padding:.3rem .8rem}
+.bottom-nav{position:fixed; bottom:0; left:0; right:0; z-index:20; background:var(--ink); border-top:1px solid color-mix(in srgb, var(--ink) 70%, #fff 30%); display:flex; justify-content:space-between; align-items:center; height:var(--bottom-nav-h); padding:.3rem .8rem .3rem .8rem; padding-bottom:calc(.3rem + env(safe-area-inset-bottom, 0px))}
 .bottom-nav .bottom-tabs{display:flex; gap:.4rem; align-items:center; justify-content:center; flex:1}
 .bottom-nav .tab{background:transparent; border:none; color:#fff; width:56px; height:40px; border-radius:.6rem; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; opacity:.8}
 .bottom-nav .tab.active{background:rgba(255,255,255,0.18)}
@@ -75,7 +76,7 @@ main{max-width:1000px; margin:0 auto; padding:1rem}
 .bottom-nav .bottom-user select:focus{outline:2px solid #fff; outline-offset:2px}
 
 /* Ensure content not hidden behind bottom nav */
-main{padding-bottom:84px}
+main{padding-bottom:calc(var(--bottom-nav-h) + 28px)}
 
 .day-bar{display:flex; align-items:center; gap:.8rem; margin:.5rem 0 1rem}
 .day-bar label{font-weight:600; color:var(--muted)}
@@ -120,7 +121,8 @@ main{padding-bottom:84px}
   background:transparent; border:none; border-radius:0; padding:0;
   min-height:auto; display:flex; flex-direction:column; gap:.4rem;
 }
-.bucket .dial{align-self:center; width:100%; display:block}
+.bucket .slider{align-self:center; width:100%; display:block}
+.slider-row{padding:.1rem .4rem .3rem}
 .bucket.drag-over{outline:2px dashed var(--accent)}
 .bucket-header{display:flex; align-items:center; justify-content:center; flex-direction:column; gap:.25rem; text-align:center}
 .swatch{width:14px; height:14px; border-radius:4px; border:1px solid var(--ring)}
@@ -136,12 +138,20 @@ main{padding-bottom:84px}
 textarea#note{border:1px solid var(--soft); background:var(--paper); border-radius:.6rem; padding:.6rem; resize:vertical}
 
 .filters{display:flex; align-items:center; gap:.6rem; margin:.5rem 0 1rem}
+.filters .checkbox{display:inline-flex; align-items:center; gap:.35rem; user-select:none}
 .charts{display:grid; gap:1rem; grid-template-columns:1fr; place-items:center}
 .legend{display:grid; gap:.3rem; width:100%; max-width:420px}
 .legend-item{display:flex; align-items:center; gap:.6rem}
 .legend .swatch{width:12px; height:12px}
 .legend .name{font-weight:600}
 .legend .time{margin-left:auto; color:var(--muted)}
+
+.legend .toggle{appearance:none; width:14px; height:14px; border:1px solid var(--soft); border-radius:3px; display:inline-grid; place-items:center; cursor:pointer}
+.legend .toggle:checked{background:var(--ink); border-color:var(--ink)}
+.legend .toggle:checked::after{content:""; width:8px; height:8px; background:#fff; border-radius:2px}
+
+.stats-summary{display:flex; flex-wrap:wrap; gap:.6rem 1rem; align-items:center; color:var(--muted); font-weight:560}
+.stats-summary .kpi{background:var(--paper); border:1px solid var(--soft); border-radius:.6rem; padding:.3rem .5rem}
 
 .settings-actions{display:flex; justify-content:flex-end; margin:.5rem 0 1rem}
 .ghost{background:transparent; border:1px dashed var(--accent); color:var(--accent); border-radius:.6rem; padding:.4rem .7rem; cursor:pointer}

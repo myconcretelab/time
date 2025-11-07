@@ -9,6 +9,8 @@ const fmtMins = (mins) => {
   if (h) return `${h}h`;
   return `${m}m`;
 };
+// For bucket display: show 0h instead of empty/0m
+const fmtBucketMins = (mins) => (mins===0 ? '0h' : fmtMins(mins||0));
 const todayStr = () => new Date().toISOString().slice(0,10);
 const fmtDateEU = (iso) => { const [y,m,d]=iso.split('-'); return `${d}/${m}`; };
 const uid = () => Math.random().toString(36).slice(2,9);
@@ -77,7 +79,13 @@ let state = {
   pebbleTray: '#edeae4',
   pebbleChip: '#edeae4',
   ringThickness: 16,
-  handleDiameter: 16
+  handleDiameter: 16,
+  stats: {
+    chartType: 'donut',
+    asPercent: false,
+    groupBy: 'theme',
+    hiddenGroups: new Set()
+  }
 };
 
 // ---------- Tabs ----------
@@ -146,55 +154,43 @@ function renderToday(skipWeekStrip=false){
     const bucket = document.createElement('div');
     bucket.className = 'bucket';
     bucket.dataset.themeId = t.id;
-    // header + dial container
+    // header + slider container
     bucket.innerHTML = `
       <div class="bucket-header">
         <div class="bucket-title" style="color:${t.color}">${escapeHtml(t.name)}</div>
-        <div class="bucket-total">${totals[t.id] ? fmtMins(totals[t.id]) : ''}</div>
+      <div class="bucket-total">${fmtBucketMins(totals[t.id]||0)}</div>
       </div>
-      <div class="dial" id="dial-${t.id}" title="Glisse pour ajuster"></div>
+      <div class="slider-row">
+        <input
+          type="range"
+          class="slider"
+          id="slider-${t.id}"
+          min="0"
+          max="${RING_MAX_MINUTES}"
+          step="${smallestUnit()}"
+          value="${Math.min(totals[t.id]||0, RING_MAX_MINUTES)}"
+          style="accent-color:${t.color}"
+          aria-label="Temps pour ${escapeHtml(t.name)}"
+        />
+      </div>
       
     `;
 
     // Append before sizing to get width
     container.appendChild(bucket);
 
-    // NexusUI Dial
-    const dialHost = document.getElementById(`dial-${t.id}`);
-    const size = Math.max(60, Math.floor(bucket.clientWidth));
-    let dial = null;
-    if (window.Nexus && window.Nexus.Dial){
-      dial = new window.Nexus.Dial(`#dial-${t.id}`, {
-        size: [size, size],
-        interaction: 'radial',
-        min: 0,
-        max: RING_MAX_MINUTES,
-        step: smallestUnit(),
-        value: Math.min(totals[t.id]||0, RING_MAX_MINUTES)
-      });
-      try{ dial.colorize && dial.colorize('accent', t.color); }catch{}
-      try{ dial.colorize && dial.colorize('fill', '#ffffff'); }catch{}
-      dial.on('change', (v)=>{
-        const minsTarget = Math.round(v/ smallestUnit())*smallestUnit();
-        setThemeTotal(state.date, t.id, minsTarget);
-        const e2 = getEntry(state.date);
-        const totals2 = totalsByTheme(e2);
-        $('.bucket-total', bucket).textContent = totals2[t.id] ? fmtMins(totals2[t.id]) : '';
-        // Update view without recomputing the week strip for smoother drag
-        renderToday(true);
-      });
-      // Refresh the week strip once the user ends interaction
-      ['mouseup','touchend','pointerup'].forEach(evt=>{
-        dialHost.addEventListener(evt, ()=>{ renderWeekStrip(); }, { passive:true });
-      });
-    } else {
-      dialHost.textContent = 'NexusUI non chargé';
-      dialHost.style.color = 'var(--muted)';
-      dialHost.style.textAlign = 'center';
-      dialHost.style.padding = '1rem 0';
-    }
+    // Slider events: input updates the value; change refreshes week strip
+    const slider = document.getElementById(`slider-${t.id}`);
+    slider.addEventListener('input', (e)=>{
+      const minsTarget = Number(e.target.value) || 0;
+      setThemeTotal(state.date, t.id, minsTarget);
+      const e2 = getEntry(state.date);
+      const totals2 = totalsByTheme(e2);
+      $('.bucket-total', bucket).textContent = fmtBucketMins(totals2[t.id]||0);
+    });
+    slider.addEventListener('change', ()=>{ renderWeekStrip(); });
 
-    // Drag & drop supprimé; le Dial contrôle le total
+    // Drag & drop supprimé; la tirette contrôle le total
   }
 
   // emotion
@@ -235,33 +231,144 @@ function rangeDates(selectValue){
   return dates.filter(d=>d>=start);
 }
 
-function renderStats(){
-  const sel = $('#range');
-  const dates = rangeDates(sel.value);
+// Continuous range for timeline charts (includes empty days)
+function rangeContinuousDates(selectValue){
   const entries = loadEntries();
-  const totals = new Map(); // themeId -> minutes
-  for (const d of dates){
-    for (const p of (entries[d]?.pebbles||[])){
-      totals.set(p.themeId, (totals.get(p.themeId)||0) + p.minutes);
+  const keys = Object.keys(entries).sort();
+  const today = new Date();
+  if (keys.length===0) return [];
+  let startISO;
+  if (selectValue==='all') startISO = keys[0];
+  else if (selectValue==='this-month') startISO = startOfMonth(today).toISOString().slice(0,10);
+  else {
+    const n = Number(selectValue)||30;
+    startISO = addDays(today, -n+1).toISOString().slice(0,10);
+  }
+  const endISO = today.toISOString().slice(0,10);
+  const out = [];
+  let d = dateFromISO(startISO);
+  const end = dateFromISO(endISO);
+  while (d <= end){ out.push(d.toISOString().slice(0,10)); d = addDays(d, 1); }
+  return out;
+}
+
+function renderStats(){
+  const rangeSel = $('#range');
+  const chartSel = $('#chart-type');
+  const percentChk = $('#as-percent');
+  const groupSel = $('#group-by');
+  // read controls -> state
+  state.stats.chartType = chartSel?.value || state.stats.chartType || 'donut';
+  state.stats.asPercent = !!percentChk?.checked;
+  state.stats.groupBy = groupSel?.value || 'theme';
+
+  const datesSparse = rangeDates(rangeSel.value);
+  const dates = rangeContinuousDates(rangeSel.value);
+  const entries = loadEntries();
+
+  // Build groups
+  const themes = state.themes.slice();
+  const groupKeyOf = (t)=> state.stats.groupBy==='category' ? (t.category||'Autre') : t.id;
+  const groupNameOf = (t)=> state.stats.groupBy==='category' ? (t.category||'Autre') : t.name;
+  const groupsByKey = new Map(); // key -> {key, name, color}
+  for (const t of themes){
+    const key = groupKeyOf(t);
+    if (!groupsByKey.has(key)) groupsByKey.set(key, { key, name: groupNameOf(t), color: t.color });
+  }
+
+  // Aggregate totals across range
+  const totals = new Map(); // key -> minutes
+  for (const d of datesSparse){
+    const e = entries[d]?.pebbles||[];
+    for (const p of e){
+      const t = themes.find(x=>x.id===p.themeId);
+      if (!t) continue;
+      const key = groupKeyOf(t);
+      totals.set(key, (totals.get(key)||0) + p.minutes);
     }
   }
-  const themeIndex = new Map(state.themes.map(t=>[t.id, t]));
-  const data = Array.from(totals.entries()).map(([id, minutes])=>({
-    id, minutes, theme: themeIndex.get(id)
-  })).filter(x=>x.theme);
-  data.sort((a,b)=>b.minutes-a.minutes);
 
-  drawPie($('#pie'), data);
-  renderLegend($('#stats-legend'), data);
+  // Daily per group for timeline charts
+  const daily = dates.map(dateISO => {
+    const map = new Map();
+    for (const g of groupsByKey.values()) map.set(g.key, 0);
+    const pebs = entries[dateISO]?.pebbles || [];
+    for (const p of pebs){
+      const t = themes.find(x=>x.id===p.themeId);
+      if (!t) continue;
+      const key = groupKeyOf(t);
+      map.set(key, (map.get(key)||0) + p.minutes);
+    }
+    return { date: dateISO, by: map };
+  });
 
-  sel.onchange = renderStats;
+  // Prepare data for donut/legend
+  const donutData = Array.from(groupsByKey.values()).map(g=>({
+    id: g.key,
+    minutes: totals.get(g.key)||0,
+    theme: { name: g.name, color: g.color }
+  })).filter(d=>d.minutes>0 || state.stats.chartType!=='donut');
+  donutData.sort((a,b)=>b.minutes-a.minutes);
+
+  // KPIs
+  const totalMinutes = Array.from(totals.values()).reduce((a,b)=>a+b,0);
+  const daysWithAny = dates.filter(d=> (entries[d]?.pebbles||[]).length>0 ).length;
+  const avgPerDay = dates.length ? Math.round(totalMinutes / Math.max(1, dates.length)) : 0;
+  const top = donutData[0];
+  renderSummary($('#stats-summary'), {
+    days: dates.length,
+    daysWithAny,
+    totalMinutes,
+    avgPerDay,
+    topName: top?.theme?.name || '—',
+    topShare: totalMinutes? Math.round(100*(top?.minutes||0)/totalMinutes) : 0
+  });
+
+  // Show/hide canvases
+  const pieCanvas = $('#pie');
+  const barsCanvas = $('#bars');
+  const heatCanvas = $('#heatmap');
+  pieCanvas.style.display = state.stats.chartType==='donut' ? '' : 'none';
+  barsCanvas.style.display = state.stats.chartType==='bars' ? '' : 'none';
+  heatCanvas.style.display = state.stats.chartType==='heat' ? '' : 'none';
+
+  if (state.stats.chartType==='donut'){
+    drawPie(pieCanvas, donutData.filter(d=>!state.stats.hiddenGroups.has(d.id)));
+  } else if (state.stats.chartType==='bars'){
+    drawStackedBars(barsCanvas, daily, Array.from(groupsByKey.values()), { asPercent: state.stats.asPercent, hidden: state.stats.hiddenGroups });
+  } else if (state.stats.chartType==='heat'){
+    drawHeatmap(heatCanvas, daily, { hidden: state.stats.hiddenGroups });
+  }
+
+  renderLegend($('#stats-legend'), donutData);
+
+  // Hook up control changes (idempotent)
+  rangeSel.onchange = renderStats;
+  chartSel.onchange = renderStats;
+  percentChk.onchange = renderStats;
+  groupSel.onchange = ()=>{ state.stats.hiddenGroups.clear(); renderStats(); };
+}
+
+function setupHiDPI(canvas, cssW, cssH){
+  const dpr = Math.max(1, Math.floor(window.devicePixelRatio||1));
+  if (cssW) canvas.style.width = cssW + 'px';
+  if (cssH) canvas.style.height = cssH + 'px';
+  const w = Math.floor((cssW || canvas.clientWidth || canvas.width) * dpr);
+  const h = Math.floor((cssH || canvas.clientHeight || canvas.height) * dpr);
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  return { ctx, w, h, dpr };
 }
 
 function drawPie(canvas, data){
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0,0,canvas.width, canvas.height);
+  const cssW = 360, cssH = 360; // keep visual size similar
+  setupHiDPI(canvas, cssW, cssH);
+  ctx.clearRect(0,0, cssW, cssH);
   const total = data.reduce((a,b)=>a+b.minutes, 0) || 1;
-  const cx = canvas.width/2, cy = canvas.height/2, r = Math.min(cx,cy)-10;
+  const cx = cssW/2, cy = cssH/2, r = Math.min(cx,cy)-10;
   let a0 = -Math.PI/2; // start top
   for (const d of data){
     const a1 = a0 + 2*Math.PI*(d.minutes/total);
@@ -269,17 +376,22 @@ function drawPie(canvas, data){
     ctx.moveTo(cx,cy);
     ctx.arc(cx,cy, r, a0, a1);
     ctx.closePath();
-    ctx.fillStyle = d.theme.color;
+    ctx.fillStyle = d.theme?.color || d.color || '#ccc';
     ctx.fill();
     a0 = a1;
   }
   // inner cut for donut
+  // Thickness mapped from settings.ringThickness (8..28) -> hole ratio (0.72..0.5)
+  const t = Math.max(0, Math.min(1, (state.ringThickness - 8) / (28 - 8)));
+  const holeRatio = 0.72 - 0.22*t;
   ctx.globalCompositeOperation = 'destination-out';
-  ctx.beginPath(); ctx.arc(cx,cy, r*0.55, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx,cy, r*holeRatio, 0, Math.PI*2); ctx.fill();
   ctx.globalCompositeOperation = 'source-over';
   // soft ring
-  ctx.beginPath(); ctx.arc(cx,cy, r*0.58, 0, Math.PI*2);
-  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,0.08)'; ctx.stroke();
+  const ringRatio = holeRatio + (1-holeRatio)*0.06;
+  ctx.beginPath(); ctx.arc(cx,cy, r*ringRatio, 0, Math.PI*2);
+  const lw = Math.max(0.5, Math.min(3, (state.handleDiameter||16)/12));
+  ctx.lineWidth = lw; ctx.strokeStyle = 'rgba(0,0,0,0.10)'; ctx.stroke();
 }
 
 function renderLegend(el, data){
@@ -287,14 +399,145 @@ function renderLegend(el, data){
   const total = data.reduce((a,b)=>a+b.minutes, 0);
   for (const d of data){
     const row = document.createElement('div'); row.className = 'legend-item';
+    const key = d.id;
+    const hidden = state.stats.hiddenGroups.has(key);
     row.innerHTML = `
-      <span class="swatch" style="background:${d.theme.color}"></span>
-      <span class="name">${d.theme.name}</span>
+      <input type="checkbox" class="toggle" ${hidden? '':'checked'} aria-label="Afficher ${escapeHtml(d.theme?.name||'')}">
+      <span class="swatch" style="background:${d.theme?.color||'#ccc'}"></span>
+      <span class="name">${d.theme?.name||'—'}</span>
       <span class="time">${fmtMins(d.minutes)} ${total?`· ${Math.round(100*d.minutes/total)}%`:''}</span>
     `;
+    row.querySelector('.toggle').addEventListener('change', (e)=>{
+      if (e.target.checked) state.stats.hiddenGroups.delete(key); else state.stats.hiddenGroups.add(key);
+      renderStats();
+    });
     el.appendChild(row);
   }
   if (!data.length){ el.innerHTML = '<div style="color:var(--muted)">Aucune donnée sur la période.</div>'; }
+}
+
+function renderSummary(el, kpis){
+  const parts = [];
+  parts.push(`<span class="kpi">Total: ${fmtMins(kpis.totalMinutes||0)}</span>`);
+  parts.push(`<span class="kpi">Jours: ${kpis.days||0}</span>`);
+  parts.push(`<span class="kpi">Actifs: ${kpis.daysWithAny||0}</span>`);
+  parts.push(`<span class="kpi">Moy/jour: ${fmtMins(kpis.avgPerDay||0)}</span>`);
+  if (kpis.topName){ parts.push(`<span class="kpi">Top: ${escapeHtml(kpis.topName)} (${kpis.topShare||0}%)</span>`); }
+  el.innerHTML = parts.join(' ');
+}
+
+function drawStackedBars(canvas, daily, groups, opts={}){
+  const hidden = opts.hidden || new Set();
+  const cssW = Math.min(900, Math.max(360, canvas.parentElement?.clientWidth||640));
+  const cssH = 280;
+  const { ctx } = setupHiDPI(canvas, cssW, cssH);
+  ctx.clearRect(0,0, cssW, cssH);
+  const padL = 36, padR = 10, padT = 10, padB = 24;
+  const innerW = (cssW - padL - padR);
+  const innerH = (cssH - padT - padB);
+  const n = daily.length || 1;
+  const bw = Math.max(2, innerW / n - 2);
+
+  // scales
+  let maxY = 0;
+  for (const d of daily){
+    const sum = Array.from(d.by.entries()).reduce((a,[k,v])=> a + (hidden.has(k)?0:v), 0);
+    if (opts.asPercent) maxY = 100; else maxY = Math.max(maxY, sum);
+  }
+  maxY = Math.max(60, maxY);
+  const scaleY = (v)=> innerH * (v / maxY);
+
+  // draw axes (minimal)
+  ctx.strokeStyle='rgba(0,0,0,0.1)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(padL, cssH-padB); ctx.lineTo(cssW-padR, cssH-padB); ctx.stroke();
+
+  // bars
+  for (let i=0;i<daily.length;i++){
+    const d = daily[i];
+    const x0 = padL + i*(bw+2);
+    // stack by group
+    let acc = 0;
+    for (const g of groups){
+      if (hidden.has(g.key)) continue;
+      const vRaw = d.by.get(g.key)||0;
+      const dayTotal = Array.from(d.by.entries()).reduce((a,[k,v])=> a + (hidden.has(k)?0:v), 0);
+      const v = opts.asPercent ? (dayTotal? (100*vRaw/dayTotal) : 0) : vRaw;
+      const hpx = scaleY(v);
+      if (!hpx) continue;
+      const y = cssH - padB - acc - hpx;
+      ctx.fillStyle = g.color;
+      ctx.fillRect(x0, y, bw, hpx);
+      acc += hpx;
+    }
+  }
+
+  // x labels (sparse)
+  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.font='11px system-ui'; ctx.textAlign='center'; ctx.textBaseline='top';
+  const step = Math.ceil(n / 10);
+  for (let i=0;i<daily.length;i+=step){
+    const x = padL + i*(bw+2) + bw/2;
+    ctx.fillText(fmtDateEU(daily[i].date), x, cssH - padB + 4);
+  }
+}
+
+function drawHeatmap(canvas, daily, opts={}){
+  const hidden = opts.hidden || new Set();
+  const cssW = Math.min(900, Math.max(360, canvas.parentElement?.clientWidth||640));
+  const cssH = 220;
+  const { ctx } = setupHiDPI(canvas, cssW, cssH);
+  ctx.clearRect(0,0, cssW, cssH);
+  const padL = 28, padR = 8, padT = 18, padB = 22;
+  const innerW = cssW - padL - padR;
+  const innerH = cssH - padT - padB;
+  const dayTotals = daily.map(d=> Array.from(d.by.entries()).reduce((a,[k,v])=> a + (hidden.has(k)?0:v), 0));
+  const maxV = Math.max(30, ...dayTotals);
+
+  // layout: columns = weeks, rows = 7 (lun..dim)
+  const dates = daily.map(d=> d.date);
+  // find first day of week (Mon=1) index
+  const dayIndex = (iso)=> (new Date(iso).getDay()+6)%7; // 0..6, 0=Mon
+  const weeks = [];
+  for (let i=0;i<dates.length;i++){
+    const iso = dates[i];
+    const weekIdx = weeks.length-1;
+    if (weeks.length===0 || dayIndex(iso)===0) weeks.push([]);
+    weeks[weeks.length-1].push({ iso, total: dayTotals[i], dow: dayIndex(iso) });
+  }
+  const cols = weeks.length;
+  const cellW = Math.max(6, Math.floor(innerW / Math.max(1, cols)) - 2);
+  const cellH = Math.floor(innerH / 7) - 2;
+
+  // titles
+  const daysFR = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.font='11px system-ui'; ctx.textAlign='right'; ctx.textBaseline='middle';
+  for (let r=0;r<7;r++){ ctx.fillText(daysFR[r], padL - 6, padT + r*(cellH+2) + cellH/2); }
+
+  // cells
+  for (let c=0;c<weeks.length;c++){
+    const col = weeks[c];
+    for (const cell of col){
+      const r = cell.dow;
+      const x = padL + c*(cellW+2);
+      const y = padT + r*(cellH+2);
+      const t = Math.min(1, cell.total / maxV);
+      const base = '#6a7c6f'; // var(--accent)
+      ctx.fillStyle = mixColor('#ffffff', base, 0.15 + 0.85*t);
+      ctx.fillRect(x, y, cellW, cellH);
+    }
+  }
+
+  // month labels (sparse)
+  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.font='11px system-ui'; ctx.textAlign='center'; ctx.textBaseline='top';
+  for (let c=0;c<weeks.length;c++){
+    const firstISO = weeks[c][0]?.iso;
+    if (!firstISO) continue;
+    const d = new Date(firstISO);
+    if (d.getDate()<=7){ // show once near month start
+      const month = d.toLocaleString('fr-FR', { month:'short' });
+      const x = padL + c*(cellW+2) + cellW/2;
+      ctx.fillText(month, x, 2);
+    }
+  }
 }
 
 // ---------- Settings View ----------
@@ -350,15 +593,15 @@ function renderSettings(){
   if (thickInput){
     thickInput.value = String(state.ringThickness);
     if (thickVal) thickVal.textContent = `${state.ringThickness}px`;
-    thickInput.oninput = (e)=>{ state.ringThickness = Number(e.target.value)||16; if (thickVal) thickVal.textContent = `${state.ringThickness}px`; renderToday(); };
-    thickInput.onchange = ()=>{ saveRingThickness(state.ringThickness); renderToday(); };
+    thickInput.oninput = (e)=>{ state.ringThickness = Number(e.target.value)||16; if (thickVal) thickVal.textContent = `${state.ringThickness}px`; renderToday(); renderStats(); };
+    thickInput.onchange = ()=>{ saveRingThickness(state.ringThickness); renderToday(); renderStats(); };
   }
 
   if (handleInput){
     handleInput.value = String(state.handleDiameter);
     if (handleVal) handleVal.textContent = `${state.handleDiameter}px`;
-    handleInput.oninput = (e)=>{ state.handleDiameter = Number(e.target.value)||16; if (handleVal) handleVal.textContent = `${state.handleDiameter}px`; renderToday(); };
-    handleInput.onchange = ()=>{ saveHandleDiameter(state.handleDiameter); renderToday(); };
+    handleInput.oninput = (e)=>{ state.handleDiameter = Number(e.target.value)||16; if (handleVal) handleVal.textContent = `${state.handleDiameter}px`; renderToday(); renderStats(); };
+    handleInput.onchange = ()=>{ saveHandleDiameter(state.handleDiameter); renderToday(); renderStats(); };
   }
 
   // no sizes controls
@@ -497,7 +740,7 @@ function renderWeekStrip(){
 }
 
 const RING_STEP_MINUTES = 15;
-const RING_MAX_MINUTES = 480; // 8h max par Dial
+const RING_MAX_MINUTES = 480; // 8h max par tirette
 function smallestUnit(){ return RING_STEP_MINUTES; }
 function decomposeMinutes(mins){
   const step = RING_STEP_MINUTES;
