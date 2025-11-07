@@ -166,7 +166,7 @@ function renderToday(skipWeekStrip=false){
     if (window.Nexus && window.Nexus.Dial){
       dial = new window.Nexus.Dial(`#dial-${t.id}`, {
         size: [size, size],
-        interaction: 'radial',
+        interaction: 'horizontal',
         min: 0,
         max: RING_MAX_MINUTES,
         step: smallestUnit(),

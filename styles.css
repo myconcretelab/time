@@ -120,7 +120,8 @@ main{padding-bottom:84px}
   background:transparent; border:none; border-radius:0; padding:0;
   min-height:auto; display:flex; flex-direction:column; gap:.4rem;
 }
-.bucket .dial{align-self:center; width:100%; display:block}
+.bucket .dial{align-self:center; width:100%; display:block; touch-action: pan-y !important}
+.bucket .dial canvas{touch-action: pan-y !important}
 .bucket.drag-over{outline:2px dashed var(--accent)}
 .bucket-header{display:flex; align-items:center; justify-content:center; flex-direction:column; gap:.25rem; text-align:center}
 .swatch{width:14px; height:14px; border-radius:4px; border:1px solid var(--ring)}
